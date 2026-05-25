@@ -87,4 +87,11 @@
       <Private>false</Private>
     </Reference>
   </ItemGroup>
+
+  <Target Name="CopyToProjectDir" AfterTargets="Build">
+    <Copy SourceFiles="$(OutputPath)\$(AssemblyName).dll"
+          DestinationFolder="$(MSBuildProjectDirectory)"
+          SkipUnchangedFiles="true" />
+    <Message Text="Copied $(AssemblyName).dll → $(MSBuildProjectDirectory)" Importance="high" />
+  </Target>
 </Project>

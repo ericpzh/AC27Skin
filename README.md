@@ -1,0 +1,199 @@
+# AC27 Skin
+
+Airport Control 27 Playtest / 机场管制 27 Demo 的文本与贴图覆盖 Mod。
+
+> [English](#english)
+
+## 安装
+
+### 第一步：下载 BepInEx
+
+1. 打开 [BepInEx Bleeding Edge 下载页](https://github.com/BepInEx/BepInEx/releases)（选最新版本）
+2. 下载 **`BepInEx_UnityIL2CPP_x64_*.zip`**（IL2CPP 版本，必须 x64）
+3. 解压这个 zip，你会得到：
+   - `BepInEx/` 文件夹
+   - `doorstop_config.ini`
+   - `winhttp.dll`
+
+### 第二步：找到游戏安装目录
+
+1. 打开 **Steam** → 右键 **Airport Control 27 Playtest** 或者 **机场管制 27 Demo** → **管理** → **浏览本地文件**
+2. 弹出来的文件夹就是游戏根目录（例如 `...\steamapps\common\Airport Control 27 Playtest`）
+3. **把 BepInEx 所有文件复制到这个目录下**：
+   - `BepInEx/` 文件夹 → 放到游戏根目录
+   - `doorstop_config.ini` → 放到游戏根目录
+   - `winhttp.dll` → 放到游戏根目录
+
+### 第三步：首次运行游戏（初始化 BepInEx）
+
+1. 启动一次游戏，会弹出一个 BepInEx 控制台窗口
+2. 等游戏进入主菜单后**退出游戏**
+3. 此时 BepInEx 已初始化完成，`BepInEx/plugins/` 等目录已自动生成
+
+### 第四步：安装 AC27 Skin
+
+1. 把 `AC27Skin.dll` 复制到 `BepInEx\plugins\` 目录下
+2. 把 `overrides/` 文件夹复制到游戏根目录
+3. 最终结构如下：
+
+```
+Airport Control 27 Playtest/
+├── doorstop_config.ini
+├── winhttp.dll
+├── BepInEx/
+│   ├── core/
+│   └── plugins/
+│       └── AC27Skin.dll       ← 放这里
+├── overrides/                  ← 放这里
+│   ├── text.txt                ← 文本替换规则
+│   ├── title.png               ← 主菜单标题图
+│   ├── icon1.png ~ icon3.png   ← 按钮图标
+│   └── kjfk/ ... zsjn/ ...     ← 机场贴图
+└── ...
+```
+
+### 第五步：重新启动游戏
+
+再次启动游戏，BepInEx 控制台弹出时看到 `[AC27Skin]` 日志即为安装成功。
+
+---
+
+## 自定义文本
+
+编辑 `overrides/text.txt`，格式为每行一条替换规则：
+
+```
+原始文本:替换后的文本
+```
+
+示例：
+
+```
+退出游戏:合上日记
+确认退出游戏吗:今天的故事就记录到这里吗
+```
+
+重启游戏后生效
+
+## 自定义图片
+
+替换 `overrides/` 下对应的 PNG 文件即可：
+
+| 文件 | 用途 |
+|------|------|
+| `title.png` | 主菜单标题 |
+| `icon1.png` ~ `icon3.png` | 主菜单按钮图标 |
+| `kjfk/`, `zsjn/`, `tutorial/` | 机场选择卡片背景 |
+
+
+---
+
+## 开发
+
+```bash
+dotnet build AC27Skin.csproj -c Release
+```
+
+编译器会自动把 DLL 输出到 `BepInEx\plugins\` 和项目根目录。
+
+
+# English
+
+Text and texture override mod for Airport Control 27 Playtest (机场管制 27 Demo).
+
+## Installation
+
+### Step 1: Download BepInEx
+
+1. Go to [BepInEx Bleeding Edge releases](https://github.com/BepInEx/BepInEx/releases) (get the latest version)
+2. Download **`BepInEx_UnityIL2CPP_x64_*.zip`** (IL2CPP, x64 required)
+3. Extract the zip. You should see:
+   - `BepInEx/` folder
+   - `doorstop_config.ini`
+   - `winhttp.dll`
+
+### Step 2: Locate the game folder
+
+1. Open **Steam** → right-click **Airport Control 27 Playtest** → **Manage** → **Browse local files**
+2. The folder that opens is the game root (e.g. `...\steamapps\common\Airport Control 27 Playtest`)
+3. **Copy all BepInEx files into this folder**:
+   - `BepInEx/` folder → game root
+   - `doorstop_config.ini` → game root
+   - `winhttp.dll` → game root
+
+### Step 3: Launch the game once (initialize BepInEx)
+
+1. Start the game — a BepInEx console window will appear
+2. Wait until the main menu loads, then **exit the game**
+3. BepInEx is now initialized and `BepInEx/plugins/` has been created
+
+### Step 4: Install AC27 Skin
+
+1. Copy `AC27Skin.dll` into `BepInEx\plugins\`
+2. Copy the `overrides/` folder into the game root
+3. Final folder structure:
+
+```
+Airport Control 27 Playtest/
+├── doorstop_config.ini
+├── winhttp.dll
+├── BepInEx/
+│   ├── core/
+│   └── plugins/
+│       └── AC27Skin.dll       ← put here
+├── overrides/                  ← put here
+│   ├── text.txt                ← text replacement rules
+│   ├── title.png               ← main menu title image
+│   ├── icon1.png ~ icon3.png   ← button icons
+│   └── kjfk/ ... zsjn/ ...     ← airport textures
+└── ...
+```
+
+### Step 5: Restart the game
+
+Launch the game again. When the BepInEx console shows `[AC27Skin]` log entries, the mod is working.
+
+---
+
+## Customizing Text
+
+Edit `overrides/text.txt`. Each line is one replacement rule:
+
+```
+original text:replacement text
+```
+
+Example:
+
+```
+退出游戏:Quit Game
+确认退出游戏吗:Are you sure you want to quit?
+```
+
+- Lines starting with `#` are comments
+- Empty lines are ignored
+- Restart the game for changes to take effect
+
+## Customizing Images
+
+Replace the corresponding PNG files under `overrides/`:
+
+| File | Purpose |
+|------|------|
+| `title.png` | Main menu title |
+| `icon1.png` ~ `icon3.png` | Main menu button icons |
+| `kjfk/`, `zsjn/`, `tutorial/` | Airport selection card backgrounds |
+
+## Uninstall
+
+Delete `BepInEx\plugins\AC27Skin.dll` and the `overrides/` folder.
+
+---
+
+## Development
+
+```bash
+dotnet build AC27Skin.csproj -c Release
+```
+
+The DLL will be automatically output to both `BepInEx\plugins\` and the project root.

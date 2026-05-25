@@ -788,15 +788,17 @@ namespace AC27Skin
         }
     }
 
-    // ==================== Delayed Text Updater (Update-based timer) ====================
-    // Now minimal: localization is disabled upfront, so text sticks immediately.
-    // Only 2 passes: first at 0.8s, second at 1.6s. Stop early if nothing to replace.
+    // ==================== Delayed Text Updater (Update-based near-instant) ====================
+    // Pass 1: 0.01s (next frame, <=16ms) — catches async-loaded UI nearly instantly
+    // Pass 2: 0.2s — safety net
+    // Pass 3: 0.5s — final safety
 
     public class DelayedTextUpdater : MonoBehaviour
     {
         public MonoBehaviour menuView;
         private float _timer;
         private int _attempt;
+        private float _nextDelay = 0.01f;  // first pass almost instant
 
         public DelayedTextUpdater(IntPtr ptr) : base(ptr) { }
 
@@ -804,6 +806,7 @@ namespace AC27Skin
         {
             _timer = 0f;
             _attempt = 0;
+            _nextDelay = 0.01f;
         }
 
         void Update()
@@ -815,13 +818,12 @@ namespace AC27Skin
             }
 
             _timer += Time.deltaTime;
-            if (_timer < 0.8f) return;
+            if (_timer < _nextDelay) return;
             _timer = 0f;
 
             _attempt++;
             try
             {
-                // Disable any new localization that popped up
                 int locsDisabled = TextReplacer.DisableAllLocalization(menuView.gameObject);
                 int btns = TextReplacer.ReplaceButtonTexts(menuView);
                 int co = TextReplacer.ReplaceCompanyText(menuView);
@@ -838,9 +840,13 @@ namespace AC27Skin
                 AC27SkinPlugin.Logger.LogError($"[AC27Skin] [Delay:{_attempt}] Error: {ex}");
             }
 
-            if (_attempt >= 2)
+            // Progress the delay for next pass
+            if (_attempt == 1) _nextDelay = 0.2f;
+            else if (_attempt == 2) _nextDelay = 0.5f;
+
+            if (_attempt >= 3)
             {
-                AC27SkinPlugin.Logger.LogInfo("[AC27Skin] [Delay] Finished 2 verification passes");
+                AC27SkinPlugin.Logger.LogInfo("[AC27Skin] [Delay] Finished 3 verification passes");
                 Destroy(this);
             }
         }
@@ -862,16 +868,51 @@ namespace AC27Skin
             try
             {
                 AC27SkinPlugin.Logger.LogInfo("[AC27Skin] [QuitView] OnEnable() — applying text overrides");
-                TextReplacer.DisableAllLocalization(__instance.gameObject);
+
+                // 1. Nuke localization immediately
+                int locsDisabled = TextReplacer.DisableAllLocalization(__instance.gameObject);
+                AC27SkinPlugin.Logger.LogInfo($"[AC27Skin] [QuitView]   Disabled {locsDisabled} LocalizeStringEvent(s)");
+
+                // 2. Dump hierarchy for diagnosis
+                DumpQuitHierarchy(__instance);
+
+                // 3. Text replacement (immediate pass, may be overwritten by async Show)
                 int btns = TextReplacer.ReplaceButtonTexts(__instance);
                 bool ver = TextReplacer.ReplaceVersionText(__instance);
                 int co = TextReplacer.ReplaceCompanyText(__instance);
                 AC27SkinPlugin.Logger.LogInfo($"[AC27Skin] [QuitView]   btns={btns}, version={ver}, company={co}");
+
+                // 4. Schedule delayed passes to catch late-loaded UI (same pattern as MainMenu)
+                ScheduleDelayedText(__instance);
             }
             catch (Exception ex)
             {
                 AC27SkinPlugin.Logger.LogError("[AC27Skin] [QuitView] error: " + ex);
             }
+        }
+
+        static void DumpQuitHierarchy(MonoBehaviour __instance)
+        {
+            var t = __instance.transform;
+            for (int i = 0; i < t.childCount && i < 15; i++)
+            {
+                var c = t.GetChild(i);
+                var allTMP = c.GetComponentsInChildren<TextMeshProUGUI>(true);
+                foreach (var tmp in allTMP)
+                {
+                    if (tmp != null && !string.IsNullOrEmpty(tmp.text))
+                        AC27SkinPlugin.Logger.LogInfo($"[AC27Skin] [QuitView]   child='{c.name}' TMP='{tmp.text}'");
+                }
+            }
+        }
+
+        static void ScheduleDelayedText(MonoBehaviour menuView)
+        {
+            var go = menuView.gameObject;
+            var updater = go.GetComponent<DelayedTextUpdater>();
+            if (updater == null) updater = go.AddComponent<DelayedTextUpdater>();
+            updater.menuView = menuView;
+            updater.ResetTimer();
         }
     }
 
@@ -891,11 +932,21 @@ namespace AC27Skin
             try
             {
                 AC27SkinPlugin.Logger.LogInfo("[AC27Skin] [QuitWishlist] OnEnable() — applying text overrides");
-                TextReplacer.DisableAllLocalization(__instance.gameObject);
+
+                int locsDisabled = TextReplacer.DisableAllLocalization(__instance.gameObject);
+                AC27SkinPlugin.Logger.LogInfo($"[AC27Skin] [QuitWishlist]   Disabled {locsDisabled} LocalizeStringEvent(s)");
+
                 int btns = TextReplacer.ReplaceButtonTexts(__instance);
                 bool ver = TextReplacer.ReplaceVersionText(__instance);
                 int co = TextReplacer.ReplaceCompanyText(__instance);
                 AC27SkinPlugin.Logger.LogInfo($"[AC27Skin] [QuitWishlist]   btns={btns}, version={ver}, company={co}");
+
+                // Schedule delayed passes
+                var go = __instance.gameObject;
+                var updater = go.GetComponent<DelayedTextUpdater>();
+                if (updater == null) updater = go.AddComponent<DelayedTextUpdater>();
+                updater.menuView = __instance;
+                updater.ResetTimer();
             }
             catch (Exception ex)
             {
