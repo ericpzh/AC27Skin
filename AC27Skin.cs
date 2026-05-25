@@ -108,6 +108,7 @@ namespace AC27Skin
             TryPatch("AirportItem_Enter",       typeof(AirportItem_Enter));
             TryPatch("QuitViewPatch",            typeof(QuitViewPatch));
             TryPatch("QuitWithWishlistPatch",   typeof(QuitWithWishlistViewPatch));
+            TryPatch("LiveryModdingPatch",      typeof(LiveryModdingViewProxyPatch));
             TryPatch("SettingsTextPatch",       typeof(SettingsTextPatch));
             TryPatch("SettingsTextPatch.Show",  typeof(SettingsTextPatch.ShowPatch));
             // All aircraft overrides disabled — keep game defaults
@@ -477,6 +478,38 @@ namespace AC27Skin
             }
             return count;
         }
+
+        /// Replace all TextMeshProUGUI texts using the text.txt override map (exact or partial match)
+        public static int ReplaceTexts(MonoBehaviour view)
+        {
+            int cnt = 0;
+            var map = AllTextSorted;
+            var all = view.GetComponentsInChildren<TextMeshProUGUI>(true);
+            foreach (var t in all)
+            {
+                if (t == null || string.IsNullOrEmpty(t.text)) continue;
+                bool changed = false;
+                string normalized = NormalizeForMatch(t.text);
+                foreach (var kv in map)
+                {
+                    if (normalized.Contains(kv.Value) && kv.Key != kv.Value)
+                        continue;
+                    if (normalized.Contains(kv.Key))
+                    {
+                        t.text = normalized.Replace(kv.Key, kv.Value);
+                        changed = true;
+                        break;
+                    }
+                }
+                if (changed)
+                {
+                    t.ForceMeshUpdate(true, true);
+                    TryDisableLocalization(t);
+                    cnt++;
+                }
+            }
+            return cnt;
+        }
     }
 
     // ==================== Patch: UpdateLogo() - intercept logo init ====================
@@ -827,9 +860,10 @@ namespace AC27Skin
                 int locsDisabled = TextReplacer.DisableAllLocalization(menuView.gameObject);
                 int btns = TextReplacer.ReplaceButtonTexts(menuView);
                 int co = TextReplacer.ReplaceCompanyText(menuView);
+                int txts = TextReplacer.ReplaceTexts(menuView);
                 LogoReplacer.Replace(menuView);
 
-                int total = btns + co;
+                int total = btns + co + txts;
                 if (total > 0 || locsDisabled > 0)
                     AC27SkinPlugin.Logger.LogInfo($"[AC27Skin] [Delay:{_attempt}] btns={btns} co={co} locsDisabled={locsDisabled}");
                 else
@@ -951,6 +985,49 @@ namespace AC27Skin
             catch (Exception ex)
             {
                 AC27SkinPlugin.Logger.LogError("[AC27Skin] [QuitWishlist] error: " + ex);
+            }
+        }
+    }
+
+    // ==================== Patch: LiveryModdingViewProxy.Awake() — apply text overrides to Mod/Livery view ====================
+    [HarmonyPatch]
+    public static class LiveryModdingViewProxyPatch
+    {
+        static MethodBase TargetMethod()
+        {
+            var type = AccessTools.TypeByName("ContextCross.View.Menu.LiveryModdingViewProxy");
+            return type != null ? AccessTools.Method(type, "Awake") : null;
+        }
+
+        [HarmonyPostfix]
+        static void Postfix(MonoBehaviour __instance)
+        {
+            try
+            {
+                AC27SkinPlugin.Logger.LogInfo("[AC27Skin] [LiveryMod] Awake() — applying text overrides");
+
+                int locsDisabled = TextReplacer.DisableAllLocalization(__instance.gameObject);
+                AC27SkinPlugin.Logger.LogInfo($"[AC27Skin] [LiveryMod]   Disabled {locsDisabled} LocalizeStringEvent(s)");
+
+                int btns = TextReplacer.ReplaceButtonTexts(__instance);
+                bool ver = TextReplacer.ReplaceVersionText(__instance);
+                int co = TextReplacer.ReplaceCompanyText(__instance);
+                AC27SkinPlugin.Logger.LogInfo($"[AC27Skin] [LiveryMod]   btns={btns}, version={ver}, company={co}");
+
+                // Replace all custom text from text.txt
+                int extra = TextReplacer.ReplaceTexts(__instance);
+                AC27SkinPlugin.Logger.LogInfo($"[AC27Skin] [LiveryMod]   extra replaced={extra}");
+
+                // Schedule delayed passes
+                var go = __instance.gameObject;
+                var updater = go.GetComponent<DelayedTextUpdater>();
+                if (updater == null) updater = go.AddComponent<DelayedTextUpdater>();
+                updater.menuView = __instance;
+                updater.ResetTimer();
+            }
+            catch (Exception ex)
+            {
+                AC27SkinPlugin.Logger.LogError("[AC27Skin] [LiveryMod] error: " + ex);
             }
         }
     }
