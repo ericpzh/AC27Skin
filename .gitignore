@@ -1,0 +1,7 @@
+# MSBuild build artifacts
+obj/
+
+# IDE
+.vs/
+.idea/
+*.user
