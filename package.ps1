@@ -4,7 +4,7 @@ Write-Host "=== Building AC27Skin ==="
 dotnet build -c Release
 if ($LASTEXITCODE -ne 0) { throw "Build failed" }
 
-$outDir = "release\AC27Skin"
+$outDir = "release\tmp"
 Remove-Item -Recurse -Force $outDir -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force $outDir | Out-Null
 
@@ -14,7 +14,7 @@ Copy-Item README.md $outDir\README.txt
 
 $zipName = "AC27Skin.zip"
 Remove-Item $zipName -ErrorAction SilentlyContinue
-Compress-Archive -Path "release\*" -DestinationPath $zipName
+Compress-Archive -Path "$outDir\*" -DestinationPath $zipName
 Remove-Item -Recurse -Force release
 
 Write-Host "=== Done: $zipName ==="
