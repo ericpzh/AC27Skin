@@ -23,9 +23,6 @@ jobs:
           cd tmp && zip -r ../AC27Skin.zip .
 
       - name: Create Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: AC27Skin.zip
-          body: |
-            Download `AC27Skin.zip`, extract to game root.
-            See [README](https://github.com/ericpzh/AC27Skin#readme) for full install guide.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create ${{ github.ref_name }} AC27Skin.zip -t "${{ github.ref_name }}" -n "Download \`AC27Skin.zip\`, extract to game root. See [README](https://github.com/ericpzh/AC27Skin#readme) for full install guide."
