@@ -1,7 +1,12 @@
 # MSBuild build artifacts
 obj/
+bin/
 
 # IDE
 .vs/
 .idea/
 *.user
+
+# Release
+AC27Skin.zip
+release/

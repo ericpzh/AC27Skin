@@ -1,0 +1,26 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Package
+        run: |
+          mkdir AC27Skin
+          cp AC27Skin.dll AC27Skin/
+          cp -r overrides AC27Skin/
+          cp README.md AC27Skin/
+          zip -r AC27Skin.zip AC27Skin/
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: AC27Skin.zip
+          generate_release_notes: true
