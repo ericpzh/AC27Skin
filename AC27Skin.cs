@@ -419,6 +419,8 @@ namespace AC27Skin
             foreach (var tmp in allTMP2)
             {
                 if (tmp == null || string.IsNullOrEmpty(tmp.text)) continue;
+                // Skip VersionText — it's handled separately by ReplaceVersionText
+                if (tmp.gameObject.name.IndexOf("VersionText", StringComparison.OrdinalIgnoreCase) >= 0) continue;
                 string original = NormalizeForMatch(tmp.text);
                 foreach (var kv in map)
                 {
@@ -445,12 +447,13 @@ namespace AC27Skin
                 // Match either "playtest/" pattern (release) or version number like "0000" / "0.0.0"
                 int idx = tmp.text.IndexOf("playtest/", StringComparison.OrdinalIgnoreCase);
                 if (idx < 0) idx = tmp.text.IndexOf("0000");   // playtest builds use "0000"
-                if (idx < 0) idx = tmp.text.IndexOf("游戏版本"); // fallback: "游戏版本" prefix
+                if (idx < 0) idx = tmp.text.IndexOf("游戏版本"); // fallback
+                if (idx < 0) idx = tmp.text.IndexOf("演练版本"); // post-override: "游戏版本"→"演练版本"
                 if (idx >= 0)
                 {
                     // Keep prefix text before version, add version + newline + company
                     string prefix;
-                    if (tmp.text.IndexOf("游戏版本") >= 0)
+                    if (tmp.text.IndexOf("游戏版本") >= 0 || tmp.text.IndexOf("演练版本") >= 0)
                         prefix = tmp.text.Substring(0, tmp.text.IndexOf(":") >= 0 ? tmp.text.IndexOf(":") + 1 : tmp.text.Length);
                     else
                         prefix = tmp.text.Substring(0, idx);
@@ -488,6 +491,8 @@ namespace AC27Skin
             foreach (var t in all)
             {
                 if (t == null || string.IsNullOrEmpty(t.text)) continue;
+                // Skip VersionText — it's handled separately by ReplaceVersionText
+                if (t.gameObject.name.IndexOf("VersionText", StringComparison.OrdinalIgnoreCase) >= 0) continue;
                 bool changed = false;
                 string normalized = NormalizeForMatch(t.text);
                 foreach (var kv in map)
@@ -858,14 +863,15 @@ namespace AC27Skin
             try
             {
                 int locsDisabled = TextReplacer.DisableAllLocalization(menuView.gameObject);
+                bool ver = TextReplacer.ReplaceVersionText(menuView);
                 int btns = TextReplacer.ReplaceButtonTexts(menuView);
                 int co = TextReplacer.ReplaceCompanyText(menuView);
                 int txts = TextReplacer.ReplaceTexts(menuView);
                 LogoReplacer.Replace(menuView);
 
-                int total = btns + co + txts;
+                int total = btns + co + txts + (ver ? 1 : 0);
                 if (total > 0 || locsDisabled > 0)
-                    AC27SkinPlugin.Logger.LogInfo($"[AC27Skin] [Delay:{_attempt}] btns={btns} co={co} locsDisabled={locsDisabled}");
+                    AC27SkinPlugin.Logger.LogInfo($"[AC27Skin] [Delay:{_attempt}] btns={btns} co={co} txts={txts} ver={ver} locsDisabled={locsDisabled}");
                 else
                     AC27SkinPlugin.Logger.LogInfo($"[AC27Skin] [Delay:{_attempt}] all stable — done.");
             }
@@ -910,9 +916,10 @@ namespace AC27Skin
                 // 2. Dump hierarchy for diagnosis
                 DumpQuitHierarchy(__instance);
 
-                // 3. Text replacement (immediate pass, may be overwritten by async Show)
-                int btns = TextReplacer.ReplaceButtonTexts(__instance);
+                // 3. Version text FIRST (see original "游戏版本" before button overrides touch it)
                 bool ver = TextReplacer.ReplaceVersionText(__instance);
+                // 4. Button text replacement (skips VersionText)
+                int btns = TextReplacer.ReplaceButtonTexts(__instance);
                 int co = TextReplacer.ReplaceCompanyText(__instance);
                 AC27SkinPlugin.Logger.LogInfo($"[AC27Skin] [QuitView]   btns={btns}, version={ver}, company={co}");
 
@@ -970,8 +977,9 @@ namespace AC27Skin
                 int locsDisabled = TextReplacer.DisableAllLocalization(__instance.gameObject);
                 AC27SkinPlugin.Logger.LogInfo($"[AC27Skin] [QuitWishlist]   Disabled {locsDisabled} LocalizeStringEvent(s)");
 
-                int btns = TextReplacer.ReplaceButtonTexts(__instance);
+                // Version text FIRST (see original "游戏版本" before button overrides touch it)
                 bool ver = TextReplacer.ReplaceVersionText(__instance);
+                int btns = TextReplacer.ReplaceButtonTexts(__instance);
                 int co = TextReplacer.ReplaceCompanyText(__instance);
                 AC27SkinPlugin.Logger.LogInfo($"[AC27Skin] [QuitWishlist]   btns={btns}, version={ver}, company={co}");
 
@@ -1008,6 +1016,15 @@ namespace AC27Skin
 
                 int locsDisabled = TextReplacer.DisableAllLocalization(__instance.gameObject);
                 AC27SkinPlugin.Logger.LogInfo($"[AC27Skin] [LiveryMod]   Disabled {locsDisabled} LocalizeStringEvent(s)");
+
+                // Dump all TMP text for diagnosis
+                var allTmp = __instance.GetComponentsInChildren<TextMeshProUGUI>(true);
+                AC27SkinPlugin.Logger.LogInfo($"[AC27Skin] [LiveryMod]   TMP count={allTmp.Length}");
+                foreach (var t in allTmp)
+                {
+                    if (t != null && !string.IsNullOrEmpty(t.text))
+                        AC27SkinPlugin.Logger.LogInfo($"[AC27Skin] [LiveryMod]     '{t.name}' = \"{t.text.Replace("\r","").Replace("\n","\\n")}\"");
+                }
 
                 int btns = TextReplacer.ReplaceButtonTexts(__instance);
                 bool ver = TextReplacer.ReplaceVersionText(__instance);
