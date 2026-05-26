@@ -1057,7 +1057,7 @@ namespace AC27Skin
         private static string _companyFrom = "CCC Games";
         private static string _companyTo;
         private static string _versionText;
-        private static Dictionary<string, string> _allText;
+        private static Dictionary<string, string> _allText = new();
 
         // Image maps are hardcoded (not in text.txt)
         private static readonly Dictionary<string, string> _lvlSelBgMap = new() {
