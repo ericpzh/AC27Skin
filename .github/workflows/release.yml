@@ -14,12 +14,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Generate PDF
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq pandoc wkhtmltopdf
+          pandoc README.md -o README.pdf --pdf-engine=wkhtmltopdf -V margin-top=15 -V margin-bottom=15 -V margin-left=15 -V margin-right=15
+
       - name: Package
         run: |
           mkdir AC27Skin
           cp AC27Skin.dll AC27Skin/
           cp -r overrides AC27Skin/
-          cp README.md AC27Skin/
+          cp README.md README.pdf AC27Skin/
           zip -r AC27Skin.zip AC27Skin/
 
       - name: Create Release
