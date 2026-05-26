@@ -5,6 +5,9 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: write
+
 jobs:
   release:
     runs-on: ubuntu-latest
@@ -23,4 +26,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: AC27Skin.zip
-          generate_release_notes: true
+          body: |
+            Download `AC27Skin.zip`, extract to game root.
+            See [README](https://github.com/ericpzh/AC27Skin#readme) for full install guide.
