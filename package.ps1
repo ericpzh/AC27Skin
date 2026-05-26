@@ -10,18 +10,7 @@ New-Item -ItemType Directory -Force $outDir | Out-Null
 
 Copy-Item AC27Skin.dll $outDir\
 Copy-Item -Recurse overrides $outDir\
-Copy-Item README.md $outDir\
-
-# Generate PDF from README
-$pdfOk = $false
-if (Get-Command pandoc -ErrorAction SilentlyContinue) {
-    Write-Host "Generating README.pdf via pandoc..."
-    pandoc README.md -o "$outDir\README.pdf" --pdf-engine=wkhtmltopdf -V margin-top=15 -V margin-bottom=15 -V margin-left=15 -V margin-right=15
-    if ($LASTEXITCODE -eq 0) { $pdfOk = $true }
-}
-if (-not $pdfOk) {
-    Write-Host "WARNING: pandoc not available, skipping README.pdf"
-}
+Copy-Item README.md $outDir\README.txt
 
 $zipName = "AC27Skin.zip"
 Remove-Item $zipName -ErrorAction SilentlyContinue
