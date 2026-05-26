@@ -195,46 +195,68 @@ namespace AC27Skin
     }
 
 
+    /// Per-frame Settings text guard. Runs in LateUpdate to catch text resets
+    /// within the same render cycle. Uses 3 rapid passes then self-destructs.
+    /// Pass schedule: frame 1, 5, 20 — near-instant first pass, safety nets after.
     public class SettingsDelayedUpdater : MonoBehaviour
     {
         public MonoBehaviour proxy;
-        private float _timer;
-        private int _attempt;
+        private int _frame;
+        private int _pass;
 
         public SettingsDelayedUpdater(IntPtr ptr) : base(ptr) { }
 
         public void ResetTimer()
         {
-            _timer = 0f;
-            _attempt = 0;
+            _frame = 0;
+            _pass = 0;
         }
 
-        void Update()
+        // Pass schedule: check at frames 1, 5, 20
+        static readonly int[] PassFrames = { 1, 5, 20 };
+
+        void LateUpdate()
         {
             if (proxy == null) { Destroy(this); return; }
+            _frame++;
 
-            _timer += Time.deltaTime;
-            if (_timer < 0.8f) return;
-            _timer = 0f;
-            _attempt++;
+            int targetPass = 0;
+            for (int i = 0; i < PassFrames.Length; i++)
+            {
+                if (_frame >= PassFrames[i]) targetPass = i + 1;
+            }
+
+            if (targetPass <= _pass) return; // not time for next pass yet
+            _pass = targetPass;
 
             try
             {
                 int locsDisabled = TextReplacer.DisableAllLocalization(proxy.gameObject);
                 int count = SettingsTextState.ApplyDetailed(proxy, false);
+
+                var settingsField = proxy.GetType().GetField("settingsView",
+                    BindingFlags.Instance | BindingFlags.NonPublic);
+                if (settingsField != null)
+                {
+                    var settingsView = settingsField.GetValue(proxy) as MonoBehaviour;
+                    if (settingsView != null && settingsView != proxy)
+                    {
+                        locsDisabled += TextReplacer.DisableAllLocalization(settingsView.gameObject);
+                        count += SettingsTextState.ApplyDetailed(settingsView, false);
+                    }
+                }
+
                 if (count > 0 || locsDisabled > 0)
-                    AC27SkinPlugin.Logger.LogInfo($"[AC27Skin] [Settings] Delayed:{_attempt} applied {count} texts, disabled {locsDisabled} locs");
-                else
-                    AC27SkinPlugin.Logger.LogInfo($"[AC27Skin] [Settings] Delayed:{_attempt} all stable — done.");
+                    AC27SkinPlugin.Logger.LogInfo($"[AC27Skin] [Settings] Delayed:pass{_pass} f{_frame} applied {count} texts, disabled {locsDisabled} locs");
             }
             catch (Exception ex)
             {
-                AC27SkinPlugin.Logger.LogError($"[AC27Skin] [Settings] Delayed:{_attempt} error: {ex}");
+                AC27SkinPlugin.Logger.LogError($"[AC27Skin] [Settings] Delayed:pass{_pass} error: {ex}");
             }
 
-            if (_attempt >= 2)
+            if (_pass >= PassFrames.Length)
             {
-                AC27SkinPlugin.Logger.LogInfo("[AC27Skin] [Settings] Delayed: finished 2 verification passes");
+                AC27SkinPlugin.Logger.LogInfo($"[AC27Skin] [Settings] Delayed: finished {PassFrames.Length} passes ({_frame} frames)");
                 Destroy(this);
             }
         }

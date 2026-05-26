@@ -31,6 +31,17 @@ namespace AC27Skin
         //private float _callSignTimer; // DISABLED — callsign overrides removed
         private float _tipsScanTimer;
         private int _guardTick;
+        private int _lastScreenW;
+        private int _lastScreenH;
+        private int _frameCount;
+
+        /// Cached reference to the active MainMenuView — set by UpdateLogoPatch postfix.
+        /// Used by ResolutionMonitor to reapply logo scale on resolution change.
+        internal static MonoBehaviour ActiveMainMenuView;
+
+        // ── StartBtn immediate fix: cached LevelSelectView ──
+        private MonoBehaviour _cachedLSV;
+        private int _lsvScanSkip;       // throttle full scene scans
 
 
 
@@ -86,6 +97,16 @@ namespace AC27Skin
                 LogAllAircraftData();
             }
 
+            // ── Resolution change monitor (LateUpdate would be ideal but Update works) ──
+            // On resolution/DPM change, reapply logo to all active MainMenuViews.
+            _frameCount++;
+            if (_lastScreenW > 0 && (Screen.width != _lastScreenW || Screen.height != _lastScreenH))
+            {
+                OnResolutionChanged();
+            }
+            _lastScreenW = Screen.width;
+            _lastScreenH = Screen.height;
+
             // ── Continuous tip guard: only polls when LoadingView is active ──
             _tipsScanTimer += Time.deltaTime;
             if (_tipsScanTimer >= 0.3f)
@@ -125,10 +146,139 @@ namespace AC27Skin
             //    _callSignTimer = 0f;
             //    OverrideAircraftFields();
             //}
+
+            // ── StartBtn immediate fix: checks LevelSelectView's Start button text every frame ──
+            TryFixStartBtnText();
         }
 
         void OnDestroy()
         {
+            ActiveMainMenuView = null;
+        }
+
+        /// Fires when Screen.width/height changes (resolution or DPI change).
+        /// Re-applies logo scale + text overrides to all active MainMenuViews.
+        private void OnResolutionChanged()
+        {
+            AC27SkinPlugin.Logger.LogInfo($"[AC27Skin] [ResMon] Resolution changed: {_lastScreenW}x{_lastScreenH} → {Screen.width}x{Screen.height} (frame={_frameCount})");
+
+            // Find all active MainMenuView instances in loaded scenes
+            // Using cached reference first, fallback to scene scanning
+            var views = new List<MonoBehaviour>();
+            if (ActiveMainMenuView != null && ActiveMainMenuView.isActiveAndEnabled)
+                views.Add(ActiveMainMenuView);
+
+            // Also scan all scenes for additional MainMenuViews
+            for (int i = 0; i < SceneManager.sceneCount; i++)
+            {
+                var scene = SceneManager.GetSceneAt(i);
+                if (!scene.isLoaded) continue;
+                foreach (var root in scene.GetRootGameObjects())
+                {
+                    foreach (var mb in root.GetComponentsInChildren<MonoBehaviour>(true))
+                    {
+                        if (mb != null && mb.GetType().Name == "MainMenuView" && mb != ActiveMainMenuView)
+                            views.Add(mb);
+                    }
+                }
+            }
+
+            if (views.Count == 0)
+            {
+                AC27SkinPlugin.Logger.LogInfo("[AC27Skin] [ResMon] No active MainMenuView found, skipping logo reapply");
+                return;
+            }
+
+            foreach (var view in views)
+            {
+                try
+                {
+                    LogoReplacer.Replace(view);
+                    TextReplacer.DisableAllLocalization(view.gameObject);
+                    TextReplacer.ReplaceButtonTexts(view);
+                    TextReplacer.ReplaceVersionText(view);
+                }
+                catch (Exception ex)
+                {
+                    AC27SkinPlugin.Logger.LogWarning($"[AC27Skin] [ResMon] Error reapplying to {view.name}: {ex.Message}");
+                }
+            }
+
+            AC27SkinPlugin.Logger.LogInfo($"[AC27Skin] [ResMon] Reapplied logo+text on {views.Count} MainMenuView(s)");
+        }
+
+        /// <summary>
+        /// Every-frame check: find active LevelSelectView, get its StartBtn,
+        /// and immediately replace text on the very first frame the button becomes active.
+        /// Replaces the old StartBtnWatcher (which relied on AddComponent lifecycle).
+        /// </summary>
+        private void TryFixStartBtnText()
+        {
+            // ── Resolve LevelSelectView (cached or scan) ──
+            if (_cachedLSV == null || !_cachedLSV.gameObject.activeInHierarchy)
+            {
+                _cachedLSV = null;
+                _lsvScanSkip++;
+                if (_lsvScanSkip < 10) return; // throttle full scans (every 10 frames ≈ 0.17s)
+                _lsvScanSkip = 0;
+
+                for (int i = 0; i < SceneManager.sceneCount; i++)
+                {
+                    var scene = SceneManager.GetSceneAt(i);
+                    if (!scene.isLoaded) continue;
+                    foreach (var root in scene.GetRootGameObjects())
+                    {
+                        foreach (var mb in root.GetComponentsInChildren<MonoBehaviour>(true))
+                        {
+                            if (mb != null && mb.GetType().Name == "LevelSelectView")
+                            {
+                                _cachedLSV = mb;
+                                break;
+                            }
+                        }
+                        if (_cachedLSV != null) break;
+                    }
+                    if (_cachedLSV != null) break;
+                }
+            }
+
+            if (_cachedLSV == null) return;
+
+            // ── Get StartBtn via hierarchy (IL2CPP field reflection returns null) ──
+            try
+            {
+                // Path from hierarchy dump: LevelSelectView → LevelPart → Start
+                var startXform = _cachedLSV.transform.Find("LevelPart/Start");
+                if (startXform == null) return; // Start button not yet created or LevelPart inactive
+                var startGo = startXform.gameObject;
+                var startBtn = startXform.GetComponent<Button>();
+                if (startBtn == null) return;
+
+                if (!startGo.activeInHierarchy) return;
+
+                // ── Button active — check and fix text immediately ──
+                var allTMP = startBtn.GetComponentsInChildren<TextMeshProUGUI>(true);
+                var map = LevelSelectState.AllTextSorted;
+                foreach (var tmp in allTMP)
+                {
+                    if (tmp == null || string.IsNullOrEmpty(tmp.text)) continue;
+                    string normalized = TextReplacer.NormalizeForMatch(tmp.text);
+                    foreach (var kv in map)
+                    {
+                        if (normalized.Contains(kv.Value) && kv.Key != kv.Value) continue;
+                        if (normalized.Contains(kv.Key))
+                        {
+                            string newText = normalized.Replace(kv.Key, kv.Value);
+                            TextReplacer.SafeSetTMPText(tmp, newText);
+                            return;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                AC27SkinPlugin.Logger.LogWarning($"[AC27Skin] [StartBtn] scan error: {ex.Message}");
+            }
         }
 
         /// <summary>

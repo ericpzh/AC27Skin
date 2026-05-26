@@ -38,6 +38,7 @@ namespace AC27Skin
             try
             {
                 AC27SkinPlugin.Logger.LogInfo("[AC27Skin] >>> UpdateLogo() called! Replacing logo + text...");
+                ModBehaviour.ActiveMainMenuView = __instance; // cache for ResolutionMonitor
                 LogoReplacer.Replace(__instance);
                 // Re-disable localization (UpdateLogo may create new localized children)
                 int locsDisabled = TextReplacer.DisableAllLocalization(__instance.gameObject);
@@ -63,11 +64,12 @@ namespace AC27Skin
         private static Texture2D _cachedTex;
         private static Sprite _cachedSprite;
         private static bool _loadAttempted;
-        // The child Image rect is 807x720, preserveAspect compresses our 1920x1080 sprite
-        // to 807x454. BaseScale=2.0 → rendered 1614x908 in a 1920x1080 canvas = 84% fill.
-        // This looks good at all resolutions because Bg width already tracks canvas scaling.
+        // BaseLogoScale calibrated at 1920x1080 (screenRatio=1.0, canvasScale≈1.0).
+        // Since this canvas has NO CanvasScaler, we must multiply by screenRatio to
+        // maintain consistent visual proportion across different resolutions.
+        // At 50% UI → scaleFactor≈0.5 → everything is HALF size → need 2× localScale.
+        // Formula: dynamicScale = BaseLogoScale * screenRatio / max(canvasScale, 0.3f)
         private const float BaseLogoScale = 3.1f;
-        private const float RefWidth = 1920f;
 
         private static void EnsureLoaded()
         {
@@ -130,7 +132,23 @@ namespace AC27Skin
                 bool firstTime = _lastReplacedLogoChildCount < 0;
                 int currentChildren = logoHolder.childCount;
 
-                var scale = new Vector3(BaseLogoScale, BaseLogoScale, 1f);
+                // Dynamic scale: scale proportional to screen width (no CanvasScaler, so UI is in pixel coords)
+                // screenRatio maintains the same visual proportion across resolutions:
+                //   At 1080p (1920 wide): ratio=1.0 → dynamicScale=3.1
+                //   At 4K (3840 wide):   ratio=2.0 → dynamicScale=6.2 (same % of screen width)
+                // Also divide by CanvasScaler.scaleFactor to compensate UI scale setting.
+                // BaseLogoScale=3.1 calibrated at 1920x1080, canvasScale≈1.0.
+                float screenRatio = (float)Screen.width / 1920f;
+                float canvasScale = GetCanvasScaleFactor(logoHolder);
+                float dynamicScale = BaseLogoScale * screenRatio / Mathf.Max(canvasScale, 0.3f);
+                var scale = new Vector3(dynamicScale, dynamicScale, 1f);
+
+                // Log once per change or every 300 frames (reduce spam)
+                bool scaleChanged = Mathf.Abs(dynamicScale - _lastLogScale) > 0.01f;
+                _lastLogScale = dynamicScale;
+                _diagFrame++;
+                if (scaleChanged || _diagFrame % 300 == 0)
+                    DumpCanvasScalerInfo(logoHolder, screenRatio, canvasScale, dynamicScale);
 
                 // 1. Check logoHolder GameObject itself
                 var ownImg = logoHolder.GetComponent<Image>();
@@ -176,8 +194,57 @@ namespace AC27Skin
                 AC27SkinPlugin.Logger.LogError("[AC27Skin] [Logo] Error: " + ex);
             }
         }
+
+        /// Get the Canvas scaleFactor from the parent Canvas. 
+        /// Logs full CanvasScaler diagnostic info when called from DumpCanvasScalerInfo.
+        private static float GetCanvasScaleFactor(Transform logoHolder)
+        {
+            try
+            {
+                var canvas = logoHolder.GetComponentInParent<Canvas>();
+                if (canvas != null)
+                {
+                    float sf = canvas.scaleFactor;
+                    if (sf > 0.01f)
+                        return sf;
+                }
+            }
+            catch { }
+            return 1.0f;
+        }
+
+        /// Log comprehensive CanvasScaler + screen info for scale diagnosis
+        private static void DumpCanvasScalerInfo(Transform logoHolder, float screenRatio, float canvasScale, float dynamicScale)
+        {
+            try
+            {
+                var canvas = logoHolder.GetComponentInParent<Canvas>();
+                string scalerInfo = "(no CanvasScaler)";
+                if (canvas != null)
+                {
+                    var scaler = canvas.GetComponent<UnityEngine.UI.CanvasScaler>();
+                    if (scaler != null)
+                    {
+                        scalerInfo = $"uiScaleMode={scaler.uiScaleMode} refRes={scaler.referenceResolution} matchWH={scaler.matchWidthOrHeight:F2} scaleFactor({scaler.scaleFactor:F2})";
+                    }
+                    else
+                    {
+                        scalerInfo = $"canvas.scaleFactor={canvas.scaleFactor:F2} (no CanvasScaler component)";
+                    }
+                }
+                AC27SkinPlugin.Logger.LogInfo($"[AC27Skin] [LogoDiag] Screen={Screen.width}x{Screen.height} dpi={Screen.dpi:F0} " +
+                    $"screenRatio={screenRatio:F2} canvasScale={canvasScale:F3} dynamicScale={dynamicScale:F3}");
+                AC27SkinPlugin.Logger.LogInfo($"[AC27Skin] [LogoDiag] Canvas: {scalerInfo}");
+            }
+            catch (Exception ex)
+            {
+                AC27SkinPlugin.Logger.LogWarning($"[AC27Skin] [LogoDiag] Error: {ex.Message}");
+            }
+        }
         
         private static int _lastReplacedLogoChildCount = -1;
+        private static float _lastLogScale = -1f;
+        private static int _diagFrame;
     }
 
     // ==================== Harmony Patch: MainMenuView.OnEnable() ====================
@@ -198,6 +265,7 @@ namespace AC27Skin
             try
             {
                 AC27SkinPlugin.Logger.LogInfo("[AC27Skin] >>> OnEnable() fired!");
+                ModBehaviour.ActiveMainMenuView = __instance; // cache for ResolutionMonitor
 
                 // 1. Full reflection dump
                 DumpAllPrivateFields(__instance);

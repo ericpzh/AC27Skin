@@ -863,6 +863,7 @@ namespace AC27Skin
             {
                 int idx = __args != null && __args.Length > 0 ? (int)__args[0] : -1;
                 LevelSelectState.FullRefresh(__instance, idx);
+                // StartBtn text is now handled by ModBehaviour.TryFixStartBtnText() — every-frame scan
             }
             catch (Exception ex) { AC27SkinPlugin.Logger.LogError("[AC27Skin] [LvlSel] ShowLevel err: " + ex); }
         }
@@ -1032,6 +1033,139 @@ namespace AC27Skin
                 LevelSelectState.FullRefresh(__instance);
             }
             catch (Exception ex) { AC27SkinPlugin.Logger.LogError("[AC27Skin] [LvlSel] LevelList err: " + ex); }
+        }
+    }
+
+    // ---- Patch: UpdateStartBtn (private void, called after level selection) ----
+    // Unlike public OnLevelItemClicked (IL2CPP-interception-unreliable), this private
+    // method IS interceptable. Postfix fires IMMEDIATELY after the game activates the
+    // Start button and sets its text — we fix the TMP text on the very same frame.
+    // Uses transform.Find() instead of field reflection because IL2CPP GetField("StartBtn") returns null.
+
+    [HarmonyPatch]
+    public static class LvSel_UpdateStartBtn
+    {
+        static MethodBase TargetMethod()
+        {
+            var t = AccessTools.TypeByName("ContextCross.View.Menu.LevelSelectView");
+            if (t == null) return null;
+            foreach (var m in t.GetMethods(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public))
+                if (m.Name == "UpdateStartBtn" && m.GetParameters().Length == 1) return m;
+            return null;
+        }
+        [HarmonyPostfix] static void Postfix(MonoBehaviour __instance, bool value)
+        {
+            if (!value) return; // button is being hidden, nothing to fix
+            try
+            {
+                // Get Start button via hierarchy: LevelSelectView → LevelPart → Start
+                var startXform = __instance.transform.Find("LevelPart/Start");
+                if (startXform == null)
+                {
+                    AC27SkinPlugin.Logger.LogWarning("[AC27Skin] [UpdStartBtn] Start not found under LevelPart!");
+                    return;
+                }
+                var startBtn = startXform.GetComponent<Button>();
+                if (startBtn == null) return;
+
+                var allTMP = startBtn.GetComponentsInChildren<TextMeshProUGUI>(true);
+                var map = LevelSelectState.AllTextSorted;
+                foreach (var tmp in allTMP)
+                {
+                    if (tmp == null || string.IsNullOrEmpty(tmp.text)) continue;
+                    string normalized = TextReplacer.NormalizeForMatch(tmp.text);
+                    foreach (var kv in map)
+                    {
+                        if (normalized.Contains(kv.Value) && kv.Key != kv.Value) continue;
+                        if (normalized.Contains(kv.Key))
+                        {
+                            string newText = normalized.Replace(kv.Key, kv.Value);
+                            TextReplacer.SafeSetTMPText(tmp, newText);
+                            return;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex) { AC27SkinPlugin.Logger.LogError("[AC27Skin] [UpdStartBtn] err: " + ex); }
+        }
+    }
+
+    // ---- StartBtnWatcher: DEPRECATED ----
+    // Replaced by ModBehaviour.TryFixStartBtnText() — a DontDestroyOnLoad every-frame scan
+    // that catches the Start button activation on the very next frame without needing
+    // to attach/detach GameObjects. Kept for Il2Cpp type registration compatibility.
+
+    public class StartBtnWatcher : MonoBehaviour
+    {
+        public MonoBehaviour TargetView;
+        private int _frame;
+        private bool _wasActive;
+        private bool _wasFixed; // suppress repeat-fix logs
+
+        public StartBtnWatcher(IntPtr ptr) : base(ptr) { }
+
+        void Start()
+        {
+            AC27SkinPlugin.Logger.LogInfo("[AC27Skin] [StartBtnW] Started — polling StartBtn forever (scene lifetime)");
+            _wasActive = false;
+            _wasFixed = false;
+        }
+
+        void LateUpdate()
+        {
+            if (TargetView == null) { Destroy(this); return; }
+            _frame++;
+
+            try
+            {
+                var startField = TargetView.GetType().GetField("StartBtn",
+                    BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                if (startField == null) return;
+                var startBtn = startField.GetValue(TargetView) as Button;
+                if (startBtn == null) return;
+
+                bool isActive = startBtn.gameObject.activeInHierarchy;
+                // Detect activation: button was inactive, just became active
+                if (isActive && !_wasActive)
+                {
+                    AC27SkinPlugin.Logger.LogInfo($"[AC27Skin] [StartBtnW] f{_frame}: StartBtn just became ACTIVE — scanning");
+                    _wasFixed = false; // rescan after re-activation
+                }
+                _wasActive = isActive;
+
+                if (!isActive) return; // still inactive, keep waiting
+
+                var allTMP = startBtn.GetComponentsInChildren<TextMeshProUGUI>(true);
+                var map = LevelSelectState.AllTextSorted;
+                bool changed = false;
+                foreach (var tmp in allTMP)
+                {
+                    if (tmp == null || string.IsNullOrEmpty(tmp.text)) continue;
+                    string normalized = TextReplacer.NormalizeForMatch(tmp.text);
+                    foreach (var kv in map)
+                    {
+                        if (normalized.Contains(kv.Value) && kv.Key != kv.Value) continue;
+                        if (normalized.Contains(kv.Key))
+                        {
+                            string newText = normalized.Replace(kv.Key, kv.Value);
+                            AC27SkinPlugin.Logger.LogInfo($"[AC27Skin] [StartBtnW] f{_frame}: '{tmp.text}' → '{newText}'");
+                            TextReplacer.SafeSetTMPText(tmp, newText);
+                            changed = true;
+                            _wasFixed = true;
+                            break;
+                        }
+                    }
+                    if (changed) break;
+                }
+
+                if (!changed && !_wasFixed) { /* keep checking */ }
+            }
+            catch (Exception ex) { AC27SkinPlugin.Logger.LogError("[AC27Skin] [StartBtnW] err: " + ex); }
+        }
+
+        void OnDestroy()
+        {
+            AC27SkinPlugin.Logger.LogInfo($"[AC27Skin] [StartBtnW] Destroyed — total={_frame}f fixed={_wasFixed}");
         }
     }
 

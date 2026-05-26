@@ -138,10 +138,19 @@ namespace AC27Skin
 
         public static bool ReplaceVersionText(MonoBehaviour menuView)
         {
+            string verText = TextOverridesConfig.VersionText ?? "伊雷娜版";
+            string company = CompanyReplaceTo;
+            string expectedTail = " " + verText + "\n" + company;
+
             var allTMP = menuView.GetComponentsInChildren<TextMeshProUGUI>(true);
             foreach (var tmp in allTMP)
             {
                 if (tmp == null || string.IsNullOrEmpty(tmp.text)) continue;
+
+                // Fast path: if text already ends with our expected replacement, skip — no change needed
+                if (tmp.text.EndsWith(expectedTail, StringComparison.Ordinal))
+                    continue;
+
                 // Match either "playtest/" pattern (release) or version number like "0000" / "0.0.0"
                 int idx = tmp.text.IndexOf("playtest/", StringComparison.OrdinalIgnoreCase);
                 if (idx < 0) idx = tmp.text.IndexOf("0000");   // playtest builds use "0000"
@@ -155,9 +164,8 @@ namespace AC27Skin
                         prefix = tmp.text.Substring(0, tmp.text.IndexOf(":") >= 0 ? tmp.text.IndexOf(":") + 1 : tmp.text.Length);
                     else
                         prefix = tmp.text.Substring(0, idx);
-                    string verText = TextOverridesConfig.VersionText ?? "伊雷娜版";
-                    SafeSetTMPText(tmp, prefix + " " + verText + "\n" + CompanyReplaceTo);
-                    AC27SkinPlugin.Logger.LogInfo($"[AC27Skin] [Text] Version replaced: prefix='{prefix}' ver='{verText}' company='{CompanyReplaceTo}'");
+                    SafeSetTMPText(tmp, prefix + expectedTail);
+                    AC27SkinPlugin.Logger.LogInfo($"[AC27Skin] [Text] Version replaced: prefix='{prefix}' ver='{verText}' company='{company}'");
                     return true;
                 }
             }
@@ -221,20 +229,24 @@ namespace AC27Skin
     public class DelayedTextUpdater : MonoBehaviour
     {
         public MonoBehaviour menuView;
-        private float _timer;
-        private int _attempt;
-        private float _nextDelay = 0.01f;  // first pass almost instant
+        private int _frame;
+        private int _consecutiveStable;
+        private int _totalChanges;
+        private bool _dumpedTypes;
 
         public DelayedTextUpdater(IntPtr ptr) : base(ptr) { }
 
         public void ResetTimer()
         {
-            _timer = 0f;
-            _attempt = 0;
-            _nextDelay = 0.01f;
+            _frame = 0;
+            _consecutiveStable = 0;
+            _totalChanges = 0;
+            _dumpedTypes = false;
         }
 
-        void Update()
+        /// Run in LateUpdate — fires AFTER all game scripts have processed their Update,
+        /// so we catch any text resets that happened this frame within the same render cycle.
+        void LateUpdate()
         {
             if (menuView == null)
             {
@@ -242,13 +254,15 @@ namespace AC27Skin
                 return;
             }
 
-            _timer += Time.deltaTime;
-            if (_timer < _nextDelay) return;
-            _timer = 0f;
-
-            _attempt++;
+            _frame++;
             try
             {
+                if (!_dumpedTypes)
+                {
+                    _dumpedTypes = true;
+                    DumpMonoTypes(menuView.gameObject);
+                }
+
                 int locsDisabled = TextReplacer.DisableAllLocalization(menuView.gameObject);
                 bool ver = TextReplacer.ReplaceVersionText(menuView);
                 int btns = TextReplacer.ReplaceButtonTexts(menuView);
@@ -258,24 +272,43 @@ namespace AC27Skin
 
                 int total = btns + co + txts + (ver ? 1 : 0);
                 if (total > 0 || locsDisabled > 0)
-                    AC27SkinPlugin.Logger.LogInfo($"[AC27Skin] [Delay:{_attempt}] btns={btns} co={co} txts={txts} ver={ver} locsDisabled={locsDisabled}");
+                {
+                    // Something changed — log and reset stable counter
+                    _totalChanges += total;
+                    _consecutiveStable = 0;
+                    AC27SkinPlugin.Logger.LogInfo($"[AC27Skin] [Frame:{_frame}] btns={btns} co={co} txts={txts} ver={ver} locsDisabled={locsDisabled} t={Time.timeSinceLevelLoad:F3}");
+                }
                 else
-                    AC27SkinPlugin.Logger.LogInfo($"[AC27Skin] [Delay:{_attempt}] all stable — done.");
+                {
+                    _consecutiveStable++;
+                }
             }
             catch (Exception ex)
             {
-                AC27SkinPlugin.Logger.LogError($"[AC27Skin] [Delay:{_attempt}] Error: {ex}");
+                AC27SkinPlugin.Logger.LogError($"[AC27Skin] [Frame:{_frame}] Error: {ex}");
             }
 
-            // Progress the delay for next pass
-            if (_attempt == 1) _nextDelay = 0.2f;
-            else if (_attempt == 2) _nextDelay = 0.5f;
-
-            if (_attempt >= 3)
+            // Stop after 60 consecutive stable frames (~1.0s) or 300 total frames (~5.0s)
+            if (_consecutiveStable >= 60 || _frame >= 300)
             {
-                AC27SkinPlugin.Logger.LogInfo("[AC27Skin] [Delay] Finished 3 verification passes");
+                AC27SkinPlugin.Logger.LogInfo($"[AC27Skin] [Delayed] Done: {_frame} frames, {_totalChanges} total changes, stable={_consecutiveStable}f (t={Time.timeSinceLevelLoad:F3})");
                 Destroy(this);
             }
+        }
+
+        /// Dump all MonoBehaviour type FullNames to diagnose localization mechanism
+        private static void DumpMonoTypes(GameObject root)
+        {
+            var seen = new HashSet<string>();
+            var allMono = root.GetComponentsInChildren<MonoBehaviour>(true);
+            foreach (var mb in allMono)
+            {
+                if (mb == null) continue;
+                var tn = mb.GetType().FullName;
+                if (tn != null && seen.Add(tn))
+                    AC27SkinPlugin.Logger.LogInfo($"[AC27Skin] [TypeDump] {tn}");
+            }
+            AC27SkinPlugin.Logger.LogInfo($"[AC27Skin] [TypeDump] Total: {seen.Count} unique MonoBehaviour types on {root.name}");
         }
     }
 

@@ -102,6 +102,7 @@ namespace AC27Skin
             TryPatch("LvSel_AirportList",       typeof(LvSel_AirportList));
             TryPatch("LvSel_LevelPartName",     typeof(LvSel_LevelPartName));
             TryPatch("LvSel_LevelList",         typeof(LvSel_LevelList));
+            TryPatch("LvSel_UpdateStartBtn",     typeof(LvSel_UpdateStartBtn));
             TryPatch("LvSel_InitBg",            typeof(LvSel_InitBg));
             TryPatch("AirportItem_Exit",        typeof(AirportItem_Exit));
             TryPatch("AirportItem_Create",      typeof(AirportItem_Create));
@@ -163,6 +164,7 @@ namespace AC27Skin
             ClassInjector.RegisterTypeInIl2Cpp<DelayedTextUpdater>();
             ClassInjector.RegisterTypeInIl2Cpp<BackgroundGuard>();
             ClassInjector.RegisterTypeInIl2Cpp<SettingsDelayedUpdater>();
+            ClassInjector.RegisterTypeInIl2Cpp<StartBtnWatcher>();
             SceneManager.add_sceneLoaded(new Action<Scene, LoadSceneMode>(OnSceneLoaded));
         }
 
